@@ -92,6 +92,7 @@
       <div class="seg" id="varSeg">
         <button data-v="t" class="on">Temperatura</button>
         <button data-v="rh">Humedad relativa</button>
+        <button data-v="icu">Isla de calor</button>
       </div>
     </div>
 
@@ -171,7 +172,7 @@
       <b>Verano − invierno:</b> diferencia entre ambos promedios estacionales, solo en estaciones con datos en las dos temporadas.
       <b>Estaciones Weather Underground</b> (Faro Punta Hualpén IHUALP1, 67 m; Willy Duarte Penco IPENCO1, 49 m; Cangrejillo IFLORI178, 199 m): de la serie horaria se toma la lectura más cercana a la hora de cada bloque (±30 min); se descartan las lecturas con T = 0 °C y HR = 0 % simultáneas (caídas del sensor). Cangrejillo, rural y a 199 m, se muestra como referencia pero no entra en la interpolación.
       <b>Relleno del Faro:</b> el Faro solo tiene datos desde el 27 de junio de 2025. Sus bloques de invierno faltantes se estiman con una regresión lineal por bloque horario contra la anomalía media de la red (promedio, entre las estaciones disponibles, de su desviación respecto de su media de ese bloque en el invierno), con al menos 3 estaciones. Validación cruzada por días (10 grupos): error cuadrático medio 1,3 °C en temperatura y 4,9 % en humedad relativa, frente a 1,7 °C y 6,6 % usando solo la media del bloque. <b>Verano 2024–25 del Faro (sin ningún dato observado):</b> se muestra una <i>estimación provisional</i> (†) obtenida con las regresiones por bloque ajustadas en invierno con las estaciones más correlacionadas (temperatura: EULA y Penco, r ≈ 0,65, error 1,3 °C en invierno; humedad: Salinas–San Marcos, r ≈ 0,73, error 4,6 %). Es una extrapolación: el 81 % de los valores de temperatura cae fuera del rango con que se calibró el modelo, el ciclo diario resultante no es confiable (el bloque de 21 h queda como el más cálido) y no hay validación en verano; úsese solo como referencia. Cuando se incorporen las series del verano 2025–26 del Faro y de Penco, el verano se recalcula con una regresión Faro~Penco calibrada en verano, que reemplaza automáticamente a la estimación provisional. Los valores rellenados se marcan con * (calibrados) o † (provisionales) y pueden desactivarse.
-      Interpolación por kriging ordinario (variograma lineal; alternativa IDW, potencia 2) sobre el límite urbano (manzanas del Censo 2024, INE, de Concepción, Talcahuano, Hualpén, San Pedro de la Paz, Chiguayante y Penco) más 500 m. Fuera de la red de estaciones (Penco, Chiguayante, sur de San Pedro de la Paz y el norte de Talcahuano) los valores son extrapolados y deben leerse con cautela; con 6 a 10 estaciones las isolíneas describen la red, no un campo continuo. <b>Población expuesta:</b> cada manzana toma el valor interpolado en su centroide y se suma su población (Censo 2024) por banda.
+      Interpolación por kriging ordinario (variograma lineal; alternativa IDW, potencia 2) sobre el límite urbano (manzanas del Censo 2024, INE, de Concepción, Talcahuano, Hualpén, San Pedro de la Paz, Chiguayante y Penco) más 500 m. Fuera de la red de estaciones (Penco, Chiguayante, sur de San Pedro de la Paz y el norte de Talcahuano) los valores son extrapolados y deben leerse con cautela; con 6 a 10 estaciones las isolíneas describen la red, no un campo continuo. <b>Isla de calor:</b> ΔT = temperatura de cada estación menos la del Faro Punta Hualpén (IHUALP1, promontorio costero a 67 m) en el mismo día y bloque; en promedio diario, la media de las seis diferencias; en máx./mín. de bloques, Tmáx − Tmáx y Tmín − Tmín de cada día. El Faro es una referencia marítima, no rural: ΔT combina el efecto urbano con el gradiente costa–interior. En invierno parte de su serie está rellenada (*) y en verano 2024–25 toda la referencia es la estimación provisional (†), por lo que la isla de calor de ese verano es igualmente provisional. <b>Población expuesta:</b> cada manzana toma el valor interpolado en su centroide y se suma su población (Censo 2024) por banda.
     </div>
   </aside>
   <div id="map"></div>
@@ -224,7 +225,10 @@ const VARS = {
         ramp: ["#313695","#4575b4","#74add1","#abd9e9","#e0f3f8","#fee090","#fdae61","#f46d43","#d73027","#a50026"] },
   rh: { name: "Humedad relativa", unit: "%", short: "HR", dec: 0,
         ramp: ["#8c510a","#bf812d","#dfc27d","#f6e8c3","#c7eae5","#80cdc1","#35978f","#01665e"] },
+  icu: { name: "Isla de calor (ΔT vs Faro Punta Hualpén)", unit: "°C", short: "ΔT", dec: 1, div: true,
+        ramp: ["#2166ac","#67a9cf","#d1e5f0","#f7f7f7","#fddbc7","#ef8a62","#b2182b"] },
 };
+const REF_ID = "FARO_PUNTA_HUALPEN", REF_NAME = "Faro Punta Hualpén";   // referencia para la isla de calor
 const DIFF = "diff";   // clave de la "temporada" verano − invierno
 
 const state = { v: "t", w: "season", s: null, m: 3, date: null, k: CONFIG.METHOD, b: CONFIG.BASEMAP, fill: true };
@@ -386,24 +390,41 @@ async function loadData() {
   AREA_F = turf.feature(AREA.buffer);
 }
 
+// Filas {date, slot, lh, s, val, est, prov} de una estación para la variable v.
+// Isla de calor: ΔT = T estación − T Faro en el mismo día y bloque (solo pares completos).
+function vrows(id, v) {
+  if (v !== "icu") return OBS[id].filter(o => o[v] != null).map(o => ({ date: o.date, slot: o.slot, lh: o.lh, s: o.s, val: o[v], est: !!o.est, prov: !!o.prov }));
+  const F = {}; (OBS[REF_ID] || []).forEach(o => { if (o.t != null) F[o.date + "|" + o.slot] = o; });
+  return OBS[id].filter(o => o.t != null && F[o.date + "|" + o.slot]).map(o => { const f = F[o.date + "|" + o.slot];
+    return { date: o.date, slot: o.slot, lh: o.lh, s: o.s, val: o.t - f.t, est: !!(o.est || f.est), prov: !!(o.prov || f.prov) }; });
+}
+// Máx./mín. de bloques: para ΔT se compara Tmáx con Tmáx y Tmín con Tmín del mismo día
+function dayExtremes(id, v, days) {
+  const byDay = (sid, k) => { const d = {}; vrows(sid, k).forEach(r => { if (!days || days.has(r.date)) (d[r.date] ||= {})[r.slot] = r.val; }); return d; };
+  if (v !== "icu") return Object.entries(byDay(id, v)).filter(([, d]) => Object.keys(d).length === 6).map(([date, d]) => ({ date, max: Math.max(...Object.values(d)), min: Math.min(...Object.values(d)) }));
+  const S = byDay(id, "t"), F = byDay(REF_ID, "t");
+  return Object.keys(S).filter(k => F[k] && Object.keys(S[k]).length === 6 && Object.keys(F[k]).length === 6).map(date => {
+    const a = Object.values(S[date]), b = Object.values(F[date]);
+    return { date, max: Math.max(...a) - Math.max(...b), min: Math.min(...a) - Math.min(...b) }; });
+}
+
 // Promedios estacionales por estación: bloques, promedio diario y máx./mín. de bloques
 function buildAgg() {
   SEASONS.forEach(s => {
     AGG[s] = {};
     ST.forEach(st => {
-      const rows = OBS[st.id].filter(o => o.s === s), res = {};
-      for (const v of ["t", "rh"]) {
-        const slots = [0,1,2,3,4,5].map(i => { const r = rows.filter(o => o.slot === i && o[v] != null);
-          return { x: mean(r.map(o => o[v])), n: r.length, nEst: r.filter(o => o.est).length, nProv: r.filter(o => o.prov).length }; });
-        const byDay = {};
-        rows.forEach(o => { if (o[v] != null) (byDay[o.date] ||= {})[o.slot] = o[v]; });
-        const full = Object.values(byDay).filter(d => Object.keys(d).length === 6).map(d => Object.values(d));
+      const res = {}, sdays = new Set(OBS[st.id].filter(o => o.s === s).map(o => o.date));
+      for (const v of ["t", "rh", "icu"]) {
+        const rows = vrows(st.id, v).filter(r => r.s === s);
+        const slots = [0,1,2,3,4,5].map(i => { const r = rows.filter(o => o.slot === i);
+          return { x: mean(r.map(o => o.val)), n: r.length, nEst: r.filter(o => o.est).length, nProv: r.filter(o => o.prov).length }; });
+        const ext = dayExtremes(st.id, v, sdays);
         const ok = slots.every(z => z.n >= CONFIG.MIN_N);
         const nEst = slots.reduce((s, z) => s + z.nEst, 0), nProv = slots.reduce((s, z) => s + z.nProv, 0);
         res[v] = { slots, nEst,
           mean: { x: ok ? mean(slots.map(z => z.x)) : null, n: Math.min(...slots.map(z => z.n)), nEst, nProv },
-          max:  { x: full.length >= CONFIG.MIN_N ? mean(full.map(d => Math.max(...d))) : null, n: full.length, nEst, nProv },
-          min:  { x: full.length >= CONFIG.MIN_N ? mean(full.map(d => Math.min(...d))) : null, n: full.length, nEst, nProv } };
+          max:  { x: ext.length >= CONFIG.MIN_N ? mean(ext.map(d => d.max)) : null, n: ext.length, nEst, nProv },
+          min:  { x: ext.length >= CONFIG.MIN_N ? mean(ext.map(d => d.min)) : null, n: ext.length, nEst, nProv } };
       }
       AGG[s][st.id] = res;
     });
@@ -417,11 +438,13 @@ function seasonVal(s, id, v, m) {
 }
 function dayObs(id, date) { return OBS[id].filter(o => o.date === date).sort((a, b) => a.slot - b.slot); }
 function dayVal(id, date, v, m) {
-  const rows = dayObs(id, date).filter(o => o[v] != null);
-  if (typeof m === "number") { const o = rows.find(o => o.slot === m); return o ? { x: o[v], n: 1, lh: o.lh, est: !!o.est, prov: !!o.prov } : { x: null }; }
+  const rows = vrows(id, v).filter(r => r.date === date);
+  if (typeof m === "number") { const o = rows.find(o => o.slot === m); return o ? { x: o.val, n: 1, lh: o.lh, est: o.est, prov: o.prov } : { x: null }; }
   if (rows.length < 6) return { x: null, n: rows.length, partial: rows.length > 0 };
-  const xs = rows.map(o => o[v]);
-  return { x: m === "mean" ? mean(xs) : m === "max" ? Math.max(...xs) : Math.min(...xs), n: 6, est: rows.some(o => o.est), prov: rows.some(o => o.prov) };
+  const flags = { n: 6, est: rows.some(o => o.est), prov: rows.some(o => o.prov) };
+  if (m === "mean") return { x: mean(rows.map(o => o.val)), ...flags };
+  const e = dayExtremes(id, v, new Set([date]))[0];
+  return e ? { x: e[m], ...flags } : { x: null, n: rows.length, partial: true };
 }
 const seasonOfDate = date => { for (const id in OBS) { const o = OBS[id].find(o => o.date === date); if (o) return o.s; } return null; };
 
@@ -532,7 +555,7 @@ async function loadMz() {
   showManzanas(mzOn); if (state.s) render();
 }
 function mzTip(m) {
-  const meta = VARS[state.v], unit = state.v === "t" ? " °C" : " %", diff = state.w === "season" && state.s === DIFF;
+  const meta = VARS[state.v], unit = state.v === "rh" ? " %" : " °C", diff = (state.w === "season" && state.s === DIFF) || state.v === "icu";
   return `${m.com} · manzana censo 2024<br>${m.p.toLocaleString("es-CL")} personas · ${m.h.toLocaleString("es-CL")} hogares · ${m.a60.toLocaleString("es-CL")} de 60 años o más` +
     (m.v != null ? `<br>${diff ? "Δ" : ""}${meta.short} interpolado: <b>${diff ? fmtSigned(m.v, meta.dec) : fmtVal(m.v, meta.dec)}${unit}</b>` : "");
 }
@@ -540,7 +563,7 @@ function showManzanas(on) { mzOn = on; if (mzLayer) on ? mzLayer.addTo(map) : ma
 
 // Cada manzana toma el valor interpolado en su centroide; se suma su población por banda.
 function exposureCalc(est, breaks, colorFor, v) {
-  const unit = v === "t" ? " °C" : " %";
+  const unit = v === "rh" ? " %" : " °C";
   const bins = breaks.slice(0, -1).map((a, i) => ({ a, b: breaks[i + 1], color: colorFor((a + breaks[i + 1]) / 2),
     label: `${trimNum(a)} – ${trimNum(breaks[i + 1])}${unit}`, p: 0, a60: 0, n: 0 }));
   let tot = 0, wsum = 0, t60 = 0;
@@ -559,8 +582,11 @@ function renderExposure(ex, v, diff) {
   if (ex === "loading") { el.innerHTML = `<div class="ex-note">${mzErr ? "No se pudieron cargar las manzanas: " + mzErr : "Cargando manzanas del Censo 2024…"}</div>`; return; }
   const meta = VARS[v], fmtN = n => Math.round(n).toLocaleString("es-CL"), pct = n => ex.tot ? 100 * n / ex.tot : 0;
   const top = [...ex.bins].reverse().find(b => b.p > 0);
-  const lab = v === "t" ? (diff ? "banda de mayor diferencia" : "banda más cálida") : (diff ? "banda de mayor diferencia" : "banda más húmeda");
+  if (v === "icu") diff = true;   // ΔT con signo
+  const lab = diff && v !== "icu" ? "banda de mayor diferencia" : v === "t" ? "banda más cálida" : v === "icu" ? "banda de mayor isla de calor" : "banda más húmeda";
   const sum = `Promedio ponderado por población: <b>${diff ? fmtSigned(ex.mean, meta.dec) : fmtVal(ex.mean, meta.dec)}${ex.unit}</b>. ` +
+    (v === "icu" && !(state.w === "season" && state.s === DIFF) ? (() => { const w = ex.bins.filter(b => b.a >= 1).reduce((a, b) => a + b.p, 0);
+      return `<b>${fmtN(w)}</b> personas (${pct(w).toFixed(0)} %) viven donde ΔT ≥ +1 °C. `; })() : "") +
     (top ? `En la ${lab} (${top.label}): <b>${fmtN(top.p)}</b> personas (${pct(top.p).toFixed(0)} %), de ellas ${fmtN(top.a60)} de 60 años o más.` : "");
   const max = Math.max(...ex.bins.map(b => b.p), 1);
   const rows = [...ex.bins].reverse().filter(b => b.p > 0).map(b =>
@@ -639,8 +665,10 @@ function render() {
 
   const theme = BASEMAPS[state.b];
   let breaks = [], step = null, lo = null, hi = null, exposure = null;
-  const colorFor = x => x == null ? "#c9cdd0" : rampColor(meta.ramp, (x - lo) / (hi - lo));
-  const fmt = x => diff ? fmtSigned(x, meta.dec) : fmtVal(x, meta.dec);
+  const colorFor = x => { if (x == null) return "#c9cdd0";
+    if (meta.div) { const M = Math.max(Math.abs(lo), Math.abs(hi), 1e-6); return rampColor(meta.ramp, (x + M) / (2 * M)); }
+    return rampColor(meta.ramp, (x - lo) / (hi - lo)); };
+  const fmt = x => diff || meta.div ? fmtSigned(x, meta.dec) : fmtVal(x, meta.dec);
 
   if (good.length >= 3) {
     const bbox = turf.bbox(AREA_F);
@@ -677,7 +705,7 @@ function render() {
       const val = f.properties.v;
       const parts = (f.geometry.type === "MultiLineString" ? f.geometry.coordinates : [f.geometry.coordinates]).flatMap(clipLine);
       if (!parts.length) return;
-      L.polyline(parts.map(c => c.map(([x, y]) => [y, x])), { color: lineCol, weight: 1, opacity: 0.8, interactive: false }).addTo(layers.lines);
+      L.polyline(parts.map(c => c.map(([x, y]) => [y, x])), { color: lineCol, weight: meta.div && Math.abs(+val) < 1e-9 ? 2.2 : 1, opacity: 0.8, interactive: false }).addTo(layers.lines);
       parts.filter(c => c.length >= 8).sort((a, b) => b.length - a.length).slice(0, 2).forEach(c => {
         const [x, y] = c[Math.floor(c.length / 2)];
         L.tooltip({ permanent: true, direction: "center", className: "iso-label", interactive: false })
@@ -689,7 +717,7 @@ function render() {
   renderExposure(exposure, v, diff);
 
   // estaciones
-  const unitS = v === "t" ? "°" : "%";
+  const unitS = v === "rh" ? "%" : "°";
   snap.forEach(s => {
     const has = s.v != null, col = has && lo != null ? colorFor(s.v) : "#c9cdd0";
     const mk = L.circleMarker([s.lat, s.lon], { radius: 7, color: "#1d2326", weight: has ? 1.5 : 1, fillColor: col, fillOpacity: has ? 1 : 0.4,
@@ -726,6 +754,7 @@ function render() {
       html += `<div class="r"><span class="sw" style="background:${colorFor((a + b) / 2)}"></span>${trimNum(a)} – ${trimNum(b)}</div>`;
     }
     html += `<div class="note">Isolíneas cada ${step} ${meta.unit} · ${metTxt} · ${good.length} estaciones` +
+      (v === "icu" ? `<br>ΔT = T estación − T ${REF_NAME}${typeof state.m === "number" || state.m === "mean" ? "" : state.m === "max" ? " (Tmáx − Tmáx)" : " (Tmín − Tmín)"}; línea gruesa en 0` : "") +
       (snap.some(s => s.est && !s.prov) ? `<br>* incluye valores rellenados (estimados)` : "") +
       (snap.some(s => s.prov) ? `<br>† estimación provisional: modelo de invierno extrapolado al verano` : "") +
       (snap.some(s => s.interp === false) ? `<br>Borde punteado: estación de referencia, no interpolada` : "") + `</div>`;
@@ -763,7 +792,7 @@ function popupHTML(s) {
     const cur = rows.find(o => o.slot === state.m);
     if (cur) head += `T: ${fmtVal(cur.t, 1)} °C · HR: ${fmtVal(cur.rh, 0)} % (${pad(cur.lh)} h)${cur.prov ? " · <i>estimación provisional</i>" : cur.est ? " · <i>estimado</i>" : ""}`;
     labs = slotLabels().map(l => l.replace(" h", ""));
-    series.push({ name: "Día", color: v === "t" ? "#d73027" : "#2c7fb8", w: 2, vals: [0,1,2,3,4,5].map(i => { const o = rows.find(o => o.slot === i); return o ? o[v] : null; }) });
+    series.push({ name: "Día", color: v === "t" ? "#d73027" : "#2c7fb8", w: 2, vals: [0,1,2,3,4,5].map(i => { const o = vrows(s.id, v).find(o => o.date === state.date && o.slot === i); return o ? o.val : null; }) });
     if (sea) series.push({ name: "Promedio " + (SEASON_INFO[sea]?.short || sea).toLowerCase(), color: "#7a7f83", w: 1.4, dash: "4 3",
       vals: [0,1,2,3,4,5].map(i => seasonVal(sea, s.id, v, i).x) });
     cap = `${meta.name} por bloque · día y promedio de la temporada`;

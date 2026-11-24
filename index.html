@@ -117,7 +117,7 @@
 
     <div class="grp row">
       <label class="chk"><input type="checkbox" id="bands" checked> Bandas de color</label>
-      <label class="chk"><input type="checkbox" id="fillChk" checked> Rellenar huecos del Faro (invierno)</label>
+      <label class="chk"><input type="checkbox" id="fillChk" checked> Rellenar huecos del Faro</label>
     </div>
 
     <div class="grp">
@@ -155,7 +155,7 @@
       <b>Promedio estacional:</b> media de todas las observaciones de la temporada en cada bloque; n = número de observaciones (o de días). <i>Promedio diario</i> = media de los 6 bloques; <i>Máx./Mín. de bloques</i> = el mayor o menor de los 6 bloques de cada día con serie completa, promediado en la temporada (aproxima, sin reemplazar, la máxima y mínima diarias). Se omiten estaciones con menos de ${MIN_N} observaciones.
       <b>Verano − invierno:</b> diferencia entre ambos promedios estacionales, solo en estaciones con datos en las dos temporadas.
       <b>Estaciones Weather Underground</b> (Faro Punta Hualpén IHUALP1, 67 m; Willy Duarte Penco IPENCO1, 49 m; Cangrejillo IFLORI178, 199 m): de la serie horaria se toma la lectura más cercana a la hora de cada bloque (±30 min); se descartan las lecturas con T = 0 °C y HR = 0 % simultáneas (caídas del sensor). Cangrejillo, rural y a 199 m, se muestra como referencia pero no entra en la interpolación.
-      <b>Relleno del Faro:</b> el Faro solo tiene datos desde el 27 de junio de 2025. Sus bloques de invierno faltantes se estiman con una regresión lineal por bloque horario contra la anomalía media de la red (promedio, entre las estaciones disponibles, de su desviación respecto de su media de ese bloque en el invierno), con al menos 3 estaciones. Validación cruzada por días (10 grupos): error cuadrático medio 1,3 °C en temperatura y 4,9 % en humedad relativa, frente a 1,7 °C y 6,6 % usando solo la media del bloque. Los valores estimados se marcan con * y pueden desactivarse. El verano no se rellena: el Faro no tiene datos de verano para calibrar el modelo, y su régimen costero (brisa, neblina) impide trasladar la relación invernal.
+      <b>Relleno del Faro:</b> el Faro solo tiene datos desde el 27 de junio de 2025. Sus bloques de invierno faltantes se estiman con una regresión lineal por bloque horario contra la anomalía media de la red (promedio, entre las estaciones disponibles, de su desviación respecto de su media de ese bloque en el invierno), con al menos 3 estaciones. Validación cruzada por días (10 grupos): error cuadrático medio 1,3 °C en temperatura y 4,9 % en humedad relativa, frente a 1,7 °C y 6,6 % usando solo la media del bloque. <b>Verano 2024–25 del Faro (sin ningún dato observado):</b> se muestra una <i>estimación provisional</i> (†) obtenida con las regresiones por bloque ajustadas en invierno con las estaciones más correlacionadas (temperatura: EULA y Penco, r ≈ 0,65, error 1,3 °C en invierno; humedad: Salinas–San Marcos, r ≈ 0,73, error 4,6 %). Es una extrapolación: el 81 % de los valores de temperatura cae fuera del rango con que se calibró el modelo, el ciclo diario resultante no es confiable (el bloque de 21 h queda como el más cálido) y no hay validación en verano; úsese solo como referencia. Cuando se incorporen las series del verano 2025–26 del Faro y de Penco, el verano se recalcula con una regresión Faro~Penco calibrada en verano, que reemplaza automáticamente a la estimación provisional. Los valores rellenados se marcan con * (calibrados) o † (provisionales) y pueden desactivarse.
       Interpolación por kriging ordinario (variograma lineal; alternativa IDW, potencia 2) dentro de la envolvente convexa de las estaciones interpoladas más 1 km. Con 6 a 10 estaciones las isolíneas describen la red, no un campo continuo.
     </div>
   </aside>
@@ -184,8 +184,18 @@ const CONFIG = {
     { id: "CANGREJILLO", name: "Cangrejillo (IFLORI178)", lat: -36.878, lon: -72.804, elev: 199, interp: false,
       file: "IFLORI178_horario_verano2024-25_invierno2025.csv" },
   ],
-  // Relleno de huecos: regresión lineal por bloque horario contra la anomalía media de la red
-  FILL: [{ id: "FARO_PUNTA_HUALPEN", season: "invierno_2025", minNet: 3 }],
+  // Relleno de huecos.
+  //  method "net":  regresión por bloque horario contra la anomalía media de la red, ajustada con los datos de la misma temporada.
+  //  method "pair": regresión por bloque horario contra una estación predictora, ajustada en otra temporada equivalente
+  //                 (calib) con series de ambas estaciones, y aplicada a la temporada sin datos.
+  FILL: [
+    { id: "FARO_PUNTA_HUALPEN", season: "invierno_2025", method: "net", minNet: 3 },
+    { id: "FARO_PUNTA_HUALPEN", season: "verano_2024_2025", method: "pair", predictor: "PENCO_WILLY_DUARTE",
+      calib: { label: "verano 2025–26", target: "IHUALP1_horario_verano2025-26.csv", predictor: "IPENCO1_horario_verano2025-26.csv" } },
+    //  method "file": valores precalculados (FechaHora_UTC, FechaHora_local, T, HR, extrap_T); solo llenan bloques aún vacíos.
+    { id: "FARO_PUNTA_HUALPEN", season: "verano_2024_2025", method: "file", file: "faro_verano_propuesto.csv", provisional: true,
+      label: "modelo de invierno aplicado al verano (T: EULA + Penco; HR: Salinas–San Marcos)" },
+  ],
 };
 // ==============================================================
 document.querySelector(".foot").innerHTML = document.querySelector(".foot").innerHTML.replace("${MIN_N}", CONFIG.MIN_N);
@@ -252,10 +262,57 @@ function wuToBlocks(txt) {
 
 // Relleno: y = a + b·anomalía media de la red, ajustado por bloque horario con los bloques observados de la temporada.
 // La anomalía de cada estación es su valor menos su media de ese bloque en la temporada; se promedia entre estaciones disponibles.
+// Ajuste lineal y = a + b·x con pares [x, y]; devuelve null si hay pocos pares
+function fitLin(P) {
+  if (P.length < CONFIG.MIN_N) return null;
+  const mx = mean(P.map(p => p[0])), my = mean(P.map(p => p[1]));
+  const b = P.reduce((s, p) => s + (p[0] - mx) * (p[1] - my), 0) / P.reduce((s, p) => s + (p[0] - mx) ** 2, 0);
+  return { a: my - b * mx, b, n: P.length, rmse: Math.sqrt(mean(P.map(p => (my - b * mx + b * p[0] - p[1]) ** 2))) };
+}
+function addEst(id, S, date, slot, v, x) {
+  if (v === "rh") x = Math.round(Math.min(100, Math.max(0, x))); else x = Math.round(x * 10) / 10;
+  let o = OBS_ALL[id].find(o => o.est && o.date === date && o.slot === slot), isNew = false;
+  if (!o) { o = { date, lh: SLOT_LAB[S][slot], slot, t: null, rh: null, s: S, est: true }; OBS_ALL[id].push(o); isNew = true; }
+  o[v] = x; return isNew;
+}
+// Relleno con estación predictora, calibrado en otra temporada: y = a + b·x por bloque
+function fillPair(cfg, calT, calP) {
+  const { id, season: S, predictor } = cfg;
+  const stats = { season: S, method: "pair", predictor, calib: cfg.calib.label, n: 0 };
+  if (!calT || !calP || !OBS_ALL[predictor]) { stats.missing = true; (FILLSTATS[id] ||= []).push(stats); return; }
+  const key = o => o.date + "|" + o.slot;
+  const P = Object.fromEntries(calP.map(o => [key(o), o]));
+  for (const v of ["t", "rh"]) {
+    const coef = [0,1,2,3,4,5].map(i => fitLin(calT.filter(o => o.slot === i && o[v] != null && P[key(o)] && P[key(o)][v] != null).map(o => [P[key(o)][v], o[v]])));
+    stats[v] = coef;
+    const own = new Set(OBS_ALL[id].filter(o => o.s === S && !o.est && o[v] != null).map(key));
+    OBS_ALL[predictor].forEach(o => {
+      const c = coef[o.slot]; if (o.s !== S || o[v] == null || !c || own.has(key(o))) return;
+      if (addEst(id, S, o.date, o.slot, v, c.a + c.b * o[v])) stats.n++;
+    });
+  }
+  (FILLSTATS[id] ||= []).push(stats);
+}
+// Relleno desde un archivo de valores propuestos: no reemplaza observaciones ni rellenos calibrados
+function fillFile(cfg, txt) {
+  const { id, season: S } = cfg;
+  const stats = { season: S, method: "file", label: cfg.label, provisional: !!cfg.provisional, n: 0, nExtrap: 0 };
+  if (!txt) { stats.missing = true; (FILLSTATS[id] ||= []).push(stats); return; }
+  const have = new Set(OBS_ALL[id].filter(o => o.s === S).map(o => o.date + "|" + o.slot));
+  parseCSV(txt).forEach(r => {
+    const slot = SLOT_OF_UTC[+r.FechaHora_UTC.slice(11, 13)], date = r.FechaHora_local.slice(0, 10);
+    if (slot == null || have.has(date + "|" + slot) || r.T === "") return;
+    const ex = r.extrap_T === "1";
+    OBS_ALL[id].push({ date, lh: +r.FechaHora_local.slice(11, 13), slot, t: +r.T, rh: r.HR === "" ? null : +r.HR, s: S,
+      est: true, prov: !!cfg.provisional, extrap: ex });
+    stats.n++; if (ex) stats.nExtrap++;
+  });
+  (FILLSTATS[id] ||= []).push(stats);
+}
 function fillGaps(cfg) {
   const { id, season: S, minNet } = cfg;
   const net = ST.filter(s => s.id !== id && s.interp !== false).map(s => s.id);
-  const stats = { n: 0 };
+  const stats = { season: S, method: "net", n: 0 };
   for (const v of ["t", "rh"]) {
     const smean = {};
     net.forEach(sid => smean[sid] = [0,1,2,3,4,5].map(i => mean(OBS_ALL[sid].filter(o => o.s === S && o.slot === i && o[v] != null).map(o => o[v]))));
@@ -263,24 +320,15 @@ function fillGaps(cfg) {
     net.forEach(sid => OBS_ALL[sid].forEach(o => { if (o.s !== S || o[v] == null || smean[sid][o.slot] == null) return;
       (an[o.date + "|" + o.slot] ||= []).push(o[v] - smean[sid][o.slot]); }));
     const own = {}; OBS_ALL[id].forEach(o => { if (o.s === S && !o.est && o[v] != null) own[o.date + "|" + o.slot] = o; });
-    const coef = [0,1,2,3,4,5].map(i => {
-      const P = Object.entries(own).filter(([k, o]) => o.slot === i && an[k]).map(([k, o]) => [mean(an[k]), o[v]]);
-      if (P.length < CONFIG.MIN_N) return null;
-      const mx = mean(P.map(p => p[0])), my = mean(P.map(p => p[1]));
-      const b = P.reduce((s, p) => s + (p[0] - mx) * (p[1] - my), 0) / P.reduce((s, p) => s + (p[0] - mx) ** 2, 0);
-      return { a: my - b * mx, b, n: P.length, rmse: Math.sqrt(mean(P.map(p => (my - b * mx + b * p[0] - p[1]) ** 2))) };
-    });
+    const coef = [0,1,2,3,4,5].map(i => fitLin(Object.entries(own).filter(([k, o]) => o.slot === i && an[k]).map(([k, o]) => [mean(an[k]), o[v]])));
     stats[v] = coef;
     Object.entries(an).forEach(([k, arr]) => {
       const [date, si] = k.split("|"), slot = +si, c = coef[slot];
       if (own[k] || !c || arr.length < minNet) return;
-      let x = c.a + c.b * mean(arr); if (v === "rh") x = Math.round(Math.min(100, Math.max(0, x))); else x = Math.round(x * 10) / 10;
-      let o = OBS_ALL[id].find(o => o.est && o.date === date && o.slot === slot);
-      if (!o) { o = { date, lh: SLOT_LAB[S][slot], slot, t: null, rh: null, s: S, est: true }; OBS_ALL[id].push(o); stats.n++; }
-      o[v] = x;
+      if (addEst(id, S, date, slot, v, c.a + c.b * mean(arr))) stats.n++;
     });
   }
-  FILLSTATS[id] = stats;
+  (FILLSTATS[id] ||= []).push(stats);
 }
 function applyFill() {
   ST.forEach(s => OBS[s.id] = OBS_ALL[s.id].filter(o => state.fill || !o.est));
@@ -310,7 +358,15 @@ async function loadData() {
     const c = labCount[s + "|" + i] || {}; const h = Object.keys(c).sort((a, b) => c[b] - c[a])[0];
     return h == null ? null : +h; }));
   DATES = [...DATE_SET].sort();
-  CONFIG.FILL.forEach(f => { if (OBS_ALL[f.id]) fillGaps(f); });
+  const optText = u => fetch(u).then(r => r.ok ? r.text() : null).catch(() => null);   // calibraciones: opcionales
+  for (const f of CONFIG.FILL) {
+    if (!OBS_ALL[f.id]) continue;
+    if (f.method === "pair") {
+      const [tT, tP] = await Promise.all([optText(f.calib.target), optText(f.calib.predictor)]);
+      fillPair(f, tT && wuToBlocks(tT), tP && wuToBlocks(tP));
+    } else if (f.method === "file") fillFile(f, await optText(f.file));
+    else fillGaps(f);
+  }
   applyFill();
   const pts = turf.featureCollection(ST.filter(s => s.interp !== false).map(s => turf.point([s.lon, s.lat])));
   AREA_F = turf.buffer(turf.convex(pts), CONFIG.BUFFER_KM, { units: "kilometers" });
@@ -324,16 +380,16 @@ function buildAgg() {
       const rows = OBS[st.id].filter(o => o.s === s), res = {};
       for (const v of ["t", "rh"]) {
         const slots = [0,1,2,3,4,5].map(i => { const r = rows.filter(o => o.slot === i && o[v] != null);
-          return { x: mean(r.map(o => o[v])), n: r.length, nEst: r.filter(o => o.est).length }; });
+          return { x: mean(r.map(o => o[v])), n: r.length, nEst: r.filter(o => o.est).length, nProv: r.filter(o => o.prov).length }; });
         const byDay = {};
         rows.forEach(o => { if (o[v] != null) (byDay[o.date] ||= {})[o.slot] = o[v]; });
         const full = Object.values(byDay).filter(d => Object.keys(d).length === 6).map(d => Object.values(d));
         const ok = slots.every(z => z.n >= CONFIG.MIN_N);
-        const nEst = slots.reduce((s, z) => s + z.nEst, 0);
+        const nEst = slots.reduce((s, z) => s + z.nEst, 0), nProv = slots.reduce((s, z) => s + z.nProv, 0);
         res[v] = { slots, nEst,
-          mean: { x: ok ? mean(slots.map(z => z.x)) : null, n: Math.min(...slots.map(z => z.n)), nEst },
-          max:  { x: full.length >= CONFIG.MIN_N ? mean(full.map(d => Math.max(...d))) : null, n: full.length, nEst },
-          min:  { x: full.length >= CONFIG.MIN_N ? mean(full.map(d => Math.min(...d))) : null, n: full.length, nEst } };
+          mean: { x: ok ? mean(slots.map(z => z.x)) : null, n: Math.min(...slots.map(z => z.n)), nEst, nProv },
+          max:  { x: full.length >= CONFIG.MIN_N ? mean(full.map(d => Math.max(...d))) : null, n: full.length, nEst, nProv },
+          min:  { x: full.length >= CONFIG.MIN_N ? mean(full.map(d => Math.min(...d))) : null, n: full.length, nEst, nProv } };
       }
       AGG[s][st.id] = res;
     });
@@ -343,15 +399,15 @@ function buildAgg() {
 function seasonVal(s, id, v, m) {
   const a = AGG[s][id][v];
   const z = typeof m === "number" ? a.slots[m] : a[m];
-  return z.x != null && z.n >= CONFIG.MIN_N ? { x: z.x, n: z.n, nEst: z.nEst } : { x: null, n: z.n };
+  return z.x != null && z.n >= CONFIG.MIN_N ? { x: z.x, n: z.n, nEst: z.nEst, nProv: z.nProv } : { x: null, n: z.n };
 }
 function dayObs(id, date) { return OBS[id].filter(o => o.date === date).sort((a, b) => a.slot - b.slot); }
 function dayVal(id, date, v, m) {
   const rows = dayObs(id, date).filter(o => o[v] != null);
-  if (typeof m === "number") { const o = rows.find(o => o.slot === m); return o ? { x: o[v], n: 1, lh: o.lh, est: !!o.est } : { x: null }; }
+  if (typeof m === "number") { const o = rows.find(o => o.slot === m); return o ? { x: o[v], n: 1, lh: o.lh, est: !!o.est, prov: !!o.prov } : { x: null }; }
   if (rows.length < 6) return { x: null, n: rows.length, partial: rows.length > 0 };
   const xs = rows.map(o => o[v]);
-  return { x: m === "mean" ? mean(xs) : m === "max" ? Math.max(...xs) : Math.min(...xs), n: 6, est: rows.some(o => o.est) };
+  return { x: m === "mean" ? mean(xs) : m === "max" ? Math.max(...xs) : Math.min(...xs), n: 6, est: rows.some(o => o.est), prov: rows.some(o => o.prov) };
 }
 const seasonOfDate = date => { for (const id in OBS) { const o = OBS[id].find(o => o.date === date); if (o) return o.s; } return null; };
 
@@ -363,10 +419,10 @@ function snapshot() {
     if (w === "day") r = dayVal(st.id, state.date, v, m);
     else if (s === DIFF) {
       const a = seasonVal(SEASONS[0], st.id, v, m), b = seasonVal(SEASONS[1], st.id, v, m);
-      r = a.x != null && b.x != null ? { x: a.x - b.x, n: Math.min(a.n, b.n), nEst: (a.nEst || 0) + (b.nEst || 0) } : { x: null, n: Math.min(a.n, b.n) };
+      r = a.x != null && b.x != null ? { x: a.x - b.x, n: Math.min(a.n, b.n), nEst: (a.nEst || 0) + (b.nEst || 0), nProv: (a.nProv || 0) + (b.nProv || 0) } : { x: null, n: Math.min(a.n, b.n) };
     } else r = seasonVal(s, st.id, v, m);
-    const est = r.x != null && (r.est || r.nEst > 0);
-    return { ...st, v: r.x, n: r.n, nEst: r.nEst || 0, est, lh: r.lh, partial: r.partial, stale: r.x == null };
+    const est = r.x != null && (r.est || r.nEst > 0), prov = r.x != null && (r.prov || r.nProv > 0);
+    return { ...st, v: r.x, n: r.n, nEst: r.nEst || 0, nProv: r.nProv || 0, est, prov, mk: prov ? "†" : est ? "*" : "", lh: r.lh, partial: r.partial, stale: r.x == null };
   });
 }
 
@@ -557,7 +613,7 @@ function render() {
     const has = s.v != null, col = has && lo != null ? colorFor(s.v) : "#c9cdd0";
     const mk = L.circleMarker([s.lat, s.lon], { radius: 7, color: "#1d2326", weight: has ? 1.5 : 1, fillColor: col, fillOpacity: has ? 1 : 0.4,
       dashArray: s.interp === false || s.est ? "3 2" : null });
-    mk.bindTooltip(has ? fmt(s.v) + unitS + (s.est ? "*" : "") : "s/d", { permanent: true, direction: "top", offset: [0, -8], className: "st-label" + (has ? "" : " stale") });
+    mk.bindTooltip(has ? fmt(s.v) + unitS + s.mk : "s/d", { permanent: true, direction: "top", offset: [0, -8], className: "st-label" + (has ? "" : " stale") });
     mk.bindPopup(() => popupHTML(s), { maxWidth: 380, minWidth: 340 });
     mk.addTo(layers.pts); s._mk = mk;
   });
@@ -571,11 +627,11 @@ function render() {
     const tr = document.createElement("tr"); if (s.v == null) tr.className = "stale";
     const col = s.v != null && lo != null ? colorFor(s.v) : "#c9cdd0";
     let right;
-    if (state.w === "day") right = s.v == null ? (s.partial ? `${s.n}/6 bloques` : "sin datos") : (typeof state.m === "number" ? pad(s.lh) + ":00" : "6 bloques") + (s.est ? " · est." : "");
-    else right = s.v == null ? (s.n ? `n=${s.n}` : "sin datos") : String(s.n) + (s.nEst ? ` (${s.nEst} est.)` : "");
+    if (state.w === "day") right = s.v == null ? (s.partial ? `${s.n}/6 bloques` : "sin datos") : (typeof state.m === "number" ? pad(s.lh) + ":00" : "6 bloques") + (s.prov ? " · prov." : s.est ? " · est." : "");
+    else right = s.v == null ? (s.n ? `n=${s.n}` : "sin datos") : String(s.n) + (s.nProv ? ` (${s.nProv} prov.)` : s.nEst ? ` (${s.nEst} est.)` : "");
     const note = [s.elev != null ? `${s.elev} m` : "", s.interp === false ? "no se interpola" : ""].filter(Boolean).join(" · ");
     tr.innerHTML = `<td><span class="dot" style="background:${col}"></span>${s.name}${note ? `<div class="hint" style="margin:0 0 0 14px">${note}</div>` : ""}</td>
-      <td class="v">${s.v != null ? fmt(s.v) + (s.est ? "*" : "") : "—"}</td><td class="h">${right}</td>`;
+      <td class="v">${s.v != null ? fmt(s.v) + s.mk : "—"}</td><td class="h">${right}</td>`;
     tr.onclick = () => { map.setView([s.lat, s.lon], Math.max(map.getZoom(), 14)); s._mk.openPopup(); };
     tb.appendChild(tr);
   });
@@ -589,7 +645,8 @@ function render() {
       html += `<div class="r"><span class="sw" style="background:${colorFor((a + b) / 2)}"></span>${trimNum(a)} – ${trimNum(b)}</div>`;
     }
     html += `<div class="note">Isolíneas cada ${step} ${meta.unit} · ${metTxt} · ${good.length} estaciones` +
-      (snap.some(s => s.est) ? `<br>* incluye valores rellenados (estimados)` : "") +
+      (snap.some(s => s.est && !s.prov) ? `<br>* incluye valores rellenados (estimados)` : "") +
+      (snap.some(s => s.prov) ? `<br>† estimación provisional: modelo de invierno extrapolado al verano` : "") +
       (snap.some(s => s.interp === false) ? `<br>Borde punteado: estación de referencia, no interpolada` : "") + `</div>`;
   } else {
     html += `<div class="note">Se necesitan ≥3 estaciones con datos para interpolar (hay ${good.length}).</div>`;
@@ -604,19 +661,26 @@ function render() {
 function popupHTML(s) {
   const meta = VARS[state.v], v = state.v;
   let head = `<b>${s.name}</b><br>` + (s.elev != null ? `<span style="color:#67727a">${s.elev} m s.n.m.${s.wu ? " · Weather Underground" : ""}${s.interp === false ? " · no se interpola" : ""}</span><br>` : "");
-  const fs = FILLSTATS[s.id];
-  if (fs && fs.n) {
+  (FILLSTATS[s.id] || []).forEach(fs => {
+    const sn = SEASON_INFO[fs.season]?.name || fs.season;
+    if (fs.missing) { if (fs.method === "pair" && !(FILLSTATS[s.id] || []).some(o => o !== fs && o.season === fs.season && o.n)) head +=`<span style="color:#67727a">${sn}: sin relleno calibrado (faltan las series ${fs.calib})</span><br>`; return; }
+    if (!fs.n) return;
+    if (fs.method === "file") {
+      head += `<span style="color:#b4541b">${state.fill ? "" : "Desactivado: "}${fs.n} bloques de ${sn} son una <b>estimación provisional</b> (${fs.label}); ` +
+        `${Math.round(100 * fs.nExtrap / fs.n)} % fuera del rango de calibración. Sin validación en verano.</span><br>`;
+      return;
+    }
     const r = k => mean(fs[k].filter(Boolean).map(c => c.rmse));
-    head += `<span style="color:#b4541b">${state.fill ? "Incluye" : "Relleno desactivado:"} ${fs.n} bloques estimados en ${SEASON_INFO[CONFIG.FILL.find(f => f.id === s.id).season]?.name}` +
-      ` (error de ajuste ≈ ${fmtVal(r("t"), 1)} °C · ${fmtVal(r("rh"), 0)} % HR)</span><br>`;
-  }
+    const how = fs.method === "pair" ? `regresión con ${ST.find(x => x.id === fs.predictor)?.name || fs.predictor}, calibrada en ${fs.calib}` : "regresión con la anomalía de la red";
+    head += `<span style="color:#b4541b">${state.fill ? "" : "Desactivado: "}${fs.n} bloques estimados en ${sn} (${how}; error de ajuste ≈ ${fmtVal(r("t"), 1)} °C · ${fmtVal(r("rh"), 0)} % HR)</span><br>`;
+  });
   let series = [], labs, cap;
   if (state.w === "day") {
     const rows = dayObs(s.id, state.date), sea = seasonOfDate(state.date);
     const nE = rows.filter(o => o.est).length;
     head += rows.length ? `${state.date} · ${rows.length}/6 bloques${nE ? ` (${nE} estimados)` : ""}<br>` : `${state.date} · sin datos<br>`;
     const cur = rows.find(o => o.slot === state.m);
-    if (cur) head += `T: ${fmtVal(cur.t, 1)} °C · HR: ${fmtVal(cur.rh, 0)} % (${pad(cur.lh)} h)${cur.est ? " · <i>estimado</i>" : ""}`;
+    if (cur) head += `T: ${fmtVal(cur.t, 1)} °C · HR: ${fmtVal(cur.rh, 0)} % (${pad(cur.lh)} h)${cur.prov ? " · <i>estimación provisional</i>" : cur.est ? " · <i>estimado</i>" : ""}`;
     labs = slotLabels().map(l => l.replace(" h", ""));
     series.push({ name: "Día", color: v === "t" ? "#d73027" : "#2c7fb8", w: 2, vals: [0,1,2,3,4,5].map(i => { const o = rows.find(o => o.slot === i); return o ? o[v] : null; }) });
     if (sea) series.push({ name: "Promedio " + (SEASON_INFO[sea]?.short || sea).toLowerCase(), color: "#7a7f83", w: 1.4, dash: "4 3",

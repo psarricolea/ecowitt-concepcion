@@ -127,7 +127,6 @@
 
     <div class="grp row">
       <label class="chk"><input type="checkbox" id="bands" checked> Bandas de color</label>
-      <label class="chk"><input type="checkbox" id="fillChk" checked> Rellenar huecos del Faro</label>
       <label class="chk"><input type="checkbox" id="mzChk" checked> Manzanas censo 2024</label>
     </div>
 
@@ -170,10 +169,10 @@
       Los bloques corresponden a las mismas horas UTC en ambas temporadas, por eso en hora local aparecen desplazados una hora (horario de verano UTC−3, de invierno UTC−4).
       <b>Promedio estacional:</b> media de todas las observaciones de la temporada en cada bloque; n = número de observaciones (o de días). <i>Promedio diario</i> = media de los 6 bloques; <i>Máx./Mín. de bloques</i> = el mayor o menor de los 6 bloques de cada día con serie completa, promediado en la temporada (aproxima, sin reemplazar, la máxima y mínima diarias). Se omiten estaciones con menos de ${MIN_N} observaciones.
       <b>Verano − invierno:</b> diferencia entre ambos promedios estacionales, solo en estaciones con datos en las dos temporadas.
-      <b>Estaciones Weather Underground</b> (Faro Punta Hualpén IHUALP1, 67 m; Willy Duarte Penco IPENCO1, 49 m; Cangrejillo IFLORI178, 199 m): de la serie horaria se toma la lectura más cercana a la hora de cada bloque (±30 min); se descartan las lecturas con T = 0 °C y HR = 0 % simultáneas (caídas del sensor). Cangrejillo, rural y a 199 m, se muestra como referencia pero no entra en la interpolación.
+      <b>Estaciones Weather Underground</b> (Willy Duarte Penco IPENCO1, 49 m; Cangrejillo IFLORI178, 199 m): de la serie horaria se toma la lectura más cercana a la hora de cada bloque (±30 min); se descartan las lecturas con T = 0 °C y HR = 0 % simultáneas (caídas del sensor). Cangrejillo, rural y a 199 m, se muestra como referencia pero no entra en la interpolación.
       <br><b>Estaciones INIA Agrometeorología</b> (Carriel Sur, Concepción, 17 m, verano e invierno; Punta Parra, Tomé, 190 m, solo verano): series horarias en hora fija UTC-4; se toma la lectura de la hora UTC exacta de cada bloque. Carriel Sur entra en la interpolación; Punta Parra, fuera del límite urbano y a 190 m, queda como referencia no interpolada.
-      <b>Relleno del Faro:</b> el Faro solo tiene datos desde el 27 de junio de 2025. Sus bloques de invierno faltantes se estiman con una regresión lineal por bloque horario contra la anomalía media de la red (promedio, entre las estaciones disponibles, de su desviación respecto de su media de ese bloque en el invierno), con al menos 3 estaciones. Validación cruzada por días (10 grupos): error cuadrático medio 1,3 °C en temperatura y 4,9 % en humedad relativa, frente a 1,7 °C y 6,6 % usando solo la media del bloque. <b>Verano 2024–25 del Faro (sin ningún dato observado):</b> se muestra una <i>estimación provisional</i> (†) obtenida con las regresiones por bloque ajustadas en invierno con las estaciones más correlacionadas (temperatura: EULA y Penco, r ≈ 0,65, error 1,3 °C en invierno; humedad: Salinas–San Marcos, r ≈ 0,73, error 4,6 %). Es una extrapolación: el 81 % de los valores de temperatura cae fuera del rango con que se calibró el modelo, el ciclo diario resultante no es confiable (el bloque de 21 h queda como el más cálido) y no hay validación en verano; úsese solo como referencia. Cuando se incorporen las series del verano 2025–26 del Faro y de Penco, el verano se recalcula con una regresión Faro~Penco calibrada en verano, que reemplaza automáticamente a la estimación provisional. Los valores rellenados se marcan con * (calibrados) o † (provisionales) y pueden desactivarse.
-      Interpolación por kriging ordinario (variograma lineal; alternativa IDW, potencia 2) sobre el límite urbano (manzanas del Censo 2024, INE, de Concepción, Talcahuano, Hualpén, San Pedro de la Paz, Chiguayante y Penco) más 500 m. Fuera de la red de estaciones (Penco, Chiguayante, sur de San Pedro de la Paz y el norte de Talcahuano) los valores son extrapolados y deben leerse con cautela; con 6 a 10 estaciones las isolíneas describen la red, no un campo continuo. <b>Isla de calor:</b> ΔT = temperatura de cada estación menos la del Faro Punta Hualpén (IHUALP1, promontorio costero a 67 m) en el mismo día y bloque; en promedio diario, la media de las seis diferencias; en máx./mín. de bloques, Tmáx − Tmáx y Tmín − Tmín de cada día. El Faro es una referencia marítima, no rural: ΔT combina el efecto urbano con el gradiente costa–interior. En invierno parte de su serie está rellenada (*) y en verano 2024–25 toda la referencia es la estimación provisional (†), por lo que la isla de calor de ese verano es igualmente provisional. <b>Población expuesta:</b> cada manzana toma el valor interpolado en su centroide y se suma su población (Censo 2024) por banda.
+      <b>Faro Punta Hualpén (ERA5-Land):</b> la estación IHUALP1 solo tiene datos desde el 27 de junio de 2025, por lo que el Faro se representa en ambas temporadas con el reanálisis ERA5-Land horario (Copernicus/ECMWF, resolución 0,1°; celda centrada en 73,1° O / 36,7° S, la celda de tierra más cercana al Faro), convertido a hora local; de cada bloque se toma el valor de la hora UTC exacta (temperatura a 2 m y humedad relativa calculada con el punto de rocío a 2 m). La serie es completa (verano: 540 bloques; invierno: 552) y reemplaza a los rellenos estadísticos anteriores. Es un valor de celda, no una medición puntual: suaviza el efecto del promontorio y del mar, y no es directamente comparable con las estaciones.
+      Interpolación por kriging ordinario (variograma lineal; alternativa IDW, potencia 2) sobre el límite urbano (manzanas del Censo 2024, INE, de Concepción, Talcahuano, Hualpén, San Pedro de la Paz, Chiguayante y Penco) más 500 m. Fuera de la red de estaciones (Penco, Chiguayante, sur de San Pedro de la Paz y el norte de Talcahuano) los valores son extrapolados y deben leerse con cautela; con 6 a 10 estaciones las isolíneas describen la red, no un campo continuo. <b>Isla de calor:</b> ΔT = temperatura de cada estación menos la del Faro Punta Hualpén (ERA5-Land, celda costera de 0,1°) en el mismo día y bloque; en promedio diario, la media de las seis diferencias; en máx./mín. de bloques, Tmáx − Tmáx y Tmín − Tmín de cada día. El Faro es una referencia marítima, no rural: ΔT combina el efecto urbano con el gradiente costa–interior, y además la diferencia entre una estación puntual y una celda de reanálisis. <b>Población expuesta:</b> cada manzana toma el valor interpolado en su centroide y se suma su población (Censo 2024) por banda.
     </div>
   </aside>
   <div id="map"></div>
@@ -194,8 +193,6 @@ const CONFIG = {
   // Se llevan a los mismos bloques de 4 h tomando la lectura más cercana a la hora del bloque (±30 min).
   // interp:false = se muestra, pero no entra en la interpolación ni en la anomalía de la red.
   EXTRA: [
-    { id: "FARO_PUNTA_HUALPEN", name: "Faro Punta Hualpén (IHUALP1)", lat: -36.749, lon: -73.190, elev: 67,
-      file: "IHUALP1_horario_invierno2025_2025-06-27_2025-08-31.csv" },
     { id: "PENCO_WILLY_DUARTE", name: "Estación Willy Duarte Penco (IPENCO1)", lat: -36.742, lon: -72.997, elev: 49,
       file: "IPENCO1_horario_verano2024-25_invierno2025.csv" },
     { id: "CANGREJILLO", name: "Cangrejillo (IFLORI178)", lat: -36.878, lon: -72.804, elev: 199, interp: false,
@@ -208,18 +205,18 @@ const CONFIG = {
     { id: "CARRIEL_SUR", name: "Carriel Sur, Concepción (INIA)", lat: -36.77, lon: -73.06, elev: 17 },
     { id: "PUNTA_PARRA", name: "Punta Parra, Tomé (INIA)", lat: -36.67, lon: -72.96, elev: 190, interp: false },
   ],
+  // Faro Punta Hualpén: serie completa de ERA5-Land horario (celda 0,1° centrada en -73,1 / -36,7), en hora local,
+  // llevada a los mismos bloques de 4 h tomando el valor de la hora UTC exacta de cada bloque (00, 04, … 20 UTC).
+  ERA5_URL: "era5land_faro_bloques.csv",
+  ERA5: [
+    { id: "FARO_PUNTA_HUALPEN", name: "Faro Punta Hualpén (ERA5-Land)", lat: -36.749, lon: -73.190, cell: "-73,1 / -36,7" },
+  ],
   // Relleno de huecos.
   //  method "net":  regresión por bloque horario contra la anomalía media de la red, ajustada con los datos de la misma temporada.
   //  method "pair": regresión por bloque horario contra una estación predictora, ajustada en otra temporada equivalente
   //                 (calib) con series de ambas estaciones, y aplicada a la temporada sin datos.
-  FILL: [
-    { id: "FARO_PUNTA_HUALPEN", season: "invierno_2025", method: "net", minNet: 3 },
-    { id: "FARO_PUNTA_HUALPEN", season: "verano_2024_2025", method: "pair", predictor: "PENCO_WILLY_DUARTE",
-      calib: { label: "verano 2025–26", target: "IHUALP1_horario_verano2025-26.csv", predictor: "IPENCO1_horario_verano2025-26.csv" } },
-    //  method "file": valores precalculados (FechaHora_UTC, FechaHora_local, T, HR, extrap_T); solo llenan bloques aún vacíos.
-    { id: "FARO_PUNTA_HUALPEN", season: "verano_2024_2025", method: "file", file: "faro_verano_propuesto.csv", provisional: true,
-      label: "modelo de invierno aplicado al verano (T: EULA + Penco; HR: Salinas–San Marcos)" },
-  ],
+  // Ya no se rellena el Faro: se usa ERA5-Land completo (ver ERA5). Se mantienen los métodos por si se necesitan.
+  FILL: [],
 };
 // ==============================================================
 document.querySelector(".foot").innerHTML = document.querySelector(".foot").innerHTML.replace("${MIN_N}", CONFIG.MIN_N);
@@ -233,7 +230,7 @@ const VARS = {
         ramp: ["#313695","#4575b4","#74add1","#abd9e9","#e0f3f8","#fee090","#fdae61","#f46d43","#d73027","#a50026"] },
   rh: { name: "Humedad relativa", unit: "%", short: "HR", dec: 0,
         ramp: ["#8c510a","#bf812d","#dfc27d","#f6e8c3","#c7eae5","#80cdc1","#35978f","#01665e"] },
-  icu: { name: "Isla de calor (ΔT vs Faro Punta Hualpén)", unit: "°C", short: "ΔT", dec: 1, div: true,
+  icu: { name: "Isla de calor (ΔT vs Faro, ERA5-Land)", unit: "°C", short: "ΔT", dec: 1, div: true,
         ramp: ["#2166ac","#67a9cf","#d1e5f0","#f7f7f7","#fddbc7","#ef8a62","#b2182b"] },
 };
 const REF_ID = "FARO_PUNTA_HUALPEN", REF_NAME = "Faro Punta Hualpén";   // referencia para la isla de calor
@@ -365,12 +362,14 @@ function applyFill() {
 async function loadData() {
   const [d, c, ...ex] = await Promise.all([CONFIG.DATA_URL, CONFIG.COORDS_URL, ...CONFIG.EXTRA.map(e => e.file)].map(getText));
   const inia = await fetch(CONFIG.INIA_URL).then(r => r.ok ? r.text() : "").catch(() => "");
+  const era5 = await fetch(CONFIG.ERA5_URL).then(r => r.ok ? r.text() : "").catch(() => "");
   ST = parseCSV(c).map(r => ({ id: r.id, name: r.nombre, lat: +r.lat, lon: +r.lon }));
   CONFIG.EXTRA.forEach(e => { if (!ST.some(s => s.id === e.id)) ST.push({ id: e.id, name: e.name, lat: e.lat, lon: e.lon, elev: e.elev, interp: e.interp, wu: true }); });
   CONFIG.INIA.forEach(e => ST.push({ id: e.id, name: e.name, lat: e.lat, lon: e.lon, elev: e.elev, interp: e.interp, src: "INIA" }));
+  CONFIG.ERA5.forEach(e => ST.push({ id: e.id, name: e.name, lat: e.lat, lon: e.lon, interp: e.interp, src: "ERA5", cell: e.cell }));
   const labCount = {};
   ST.forEach(s => OBS_ALL[s.id] = []);
-  [...parseCSV(d), ...(inia ? parseCSV(inia) : [])].forEach(r => {
+  [...parseCSV(d), ...(inia ? parseCSV(inia) : []), ...(era5 ? parseCSV(era5) : [])].forEach(r => {
     const uh = +r.FechaHora_UTC.slice(11, 13), slot = SLOT_OF_UTC[uh];
     if (slot == null || !OBS_ALL[r.estacion]) return;
     const o = { date: r.FechaHora_local.slice(0, 10), lh: +r.FechaHora_local.slice(11, 13), slot,
@@ -780,7 +779,7 @@ function render() {
 // ---------- ventana de cada estación: ciclo por bloques ----------
 function popupHTML(s) {
   const meta = VARS[state.v], v = state.v;
-  let head = `<b>${s.name}</b><br>` + (s.elev != null ? `<span style="color:#67727a">${s.elev} m s.n.m.${s.wu ? " · Weather Underground" : s.src === "INIA" ? " · INIA Agrometeorología" : ""}${s.interp === false ? " · no se interpola" : ""}</span><br>` : "");
+  let head = `<b>${s.name}</b><br>` + (s.src === "ERA5" ? `<span style="color:#67727a">Reanálisis ERA5-Land horario · celda 0,1° (${s.cell})${s.interp === false ? " · no se interpola" : ""}</span><br>` : "") + (s.elev != null ? `<span style="color:#67727a">${s.elev} m s.n.m.${s.wu ? " · Weather Underground" : s.src === "INIA" ? " · INIA Agrometeorología" : ""}${s.interp === false ? " · no se interpola" : ""}</span><br>` : "");
   (FILLSTATS[s.id] || []).forEach(fs => {
     const sn = SEASON_INFO[fs.season]?.name || fs.season;
     if (fs.missing) { if (fs.method === "pair" && !(FILLSTATS[s.id] || []).some(o => o !== fs && o.season === fs.season && o.n)) head +=`<span style="color:#67727a">${sn}: sin relleno calibrado (faltan las series ${fs.calib})</span><br>`; return; }
@@ -882,7 +881,7 @@ segClick("metSeg", b => state.k = b.dataset.k);
 segClick("baseSeg", b => setBasemap(b.dataset.b));
 document.getElementById("bands").addEventListener("change", render);
 document.getElementById("mzChk").addEventListener("change", e => showManzanas(e.target.checked));
-document.getElementById("fillChk").addEventListener("change", e => { state.fill = e.target.checked; applyFill(); render(); });
+document.getElementById("fillChk")?.addEventListener("change", e => { state.fill = e.target.checked; applyFill(); render(); });
 dateEl.addEventListener("change", () => { setDate(dateEl.value); render(); });
 document.getElementById("prevDay").onclick = () => stepDate(-1);
 document.getElementById("nextDay").onclick = () => stepDate(1);
